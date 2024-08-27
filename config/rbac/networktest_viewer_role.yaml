@@ -1,0 +1,23 @@
+# permissions for end users to view networktests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: networktest-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: networktest-viewer-role
+rules:
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests/status
+  verbs:
+  - get

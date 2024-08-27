@@ -1,0 +1,27 @@
+# permissions for end users to edit networktests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: networktest-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: networktest-editor-role
+rules:
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests/status
+  verbs:
+  - get

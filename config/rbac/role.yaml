@@ -1,0 +1,97 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs/status
+  verbs:
+  - get
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - rgravlin.github.com
+  resources:
+  - networktests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - rgravlin.github.com.kubebuilder.io
+  resources:
+  - networktests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rgravlin.github.com.kubebuilder.io
+  resources:
+  - networktests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - rgravlin.github.com.kubebuilder.io
+  resources:
+  - networktests/status
+  verbs:
+  - get
+  - patch
+  - update

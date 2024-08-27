@@ -1,0 +1,9 @@
+apiVersion: rgravlin.github.com/v1
+kind: NetworkTest
+metadata:
+  labels:
+    app.kubernetes.io/name: networktest-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: networktest-sample
+spec:
+  # TODO(user): Add fields here

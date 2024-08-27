@@ -1,0 +1,8 @@
+apiVersion: rgravlin.github.com/v1
+kind: NetworkTest
+metadata:
+  name: rgravlin-test-basic
+  namespace: default
+spec:
+  type: "httpz"
+  host: "loosebits.io"
