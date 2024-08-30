@@ -38,14 +38,15 @@ type NetworkTestType string
 
 // NetworkTestSpec defines the desired state of NetworkTest
 type NetworkTestSpec struct {
-	Host          string          `json:"host"`
-	Image         string          `json:"image,omitempty"`
-	Registry      string          `json:"registry,omitempty"`
-	Schedule      string          `json:"schedule,omitempty"`
-	Suspend       bool            `json:"suspend,omitempty"`
-	Timeout       int             `json:"timeout,omitempty"`
-	TimeoutUnsafe bool            `json:"timeoutUnsafe,omitempty"`
-	Type          NetworkTestType `json:"type"`
+	Host          string            `json:"host"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	Registry      string            `json:"registry,omitempty"`
+	Repo          string            `json:"repo,omitempty"`
+	Schedule      string            `json:"schedule,omitempty"`
+	Suspend       bool              `json:"suspend,omitempty"`
+	Timeout       int               `json:"timeout,omitempty"`
+	TimeoutUnsafe bool              `json:"timeoutUnsafe,omitempty"`
+	Type          NetworkTestType   `json:"type"`
 }
 
 // NetworkTestStatus defines the observed state of NetworkTest
@@ -59,6 +60,7 @@ type NetworkTestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.cronSync`
 // +kubebuilder:printcolumn:name="Cron Job",type=string,JSONPath=`.status.cronJobName`
 // +kubebuilder:printcolumn:name="Last Success",type=string,JSONPath=`.status.lastSuccess`
