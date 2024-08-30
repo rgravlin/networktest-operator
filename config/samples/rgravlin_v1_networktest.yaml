@@ -1,9 +1,22 @@
+---
 apiVersion: rgravlin.github.com/v1
 kind: NetworkTest
 metadata:
   labels:
     app.kubernetes.io/name: networktest-operator
     app.kubernetes.io/managed-by: kustomize
-  name: networktest-sample
+  name: networktest-https-sample
 spec:
-  # TODO(user): Add fields here
+  type: "https"
+  host: "loosebits.io"
+---
+apiVersion: rgravlin.github.com/v1
+kind: NetworkTest
+metadata:
+  labels:
+    app.kubernetes.io/name: networktest-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: networktest-http-sample
+spec:
+  type: "http"
+  host: "loosebits.io"

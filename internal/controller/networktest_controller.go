@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/go-test/deep"
 	"github.com/pkg/errors"
 	rgravlinv1 "github.com/rgravlin/networktest-operator/api/v1"
@@ -27,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"net/http"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -36,10 +37,10 @@ import (
 
 const (
 	NetworkTestName                       = "networktest"
-	NetworkTestRunnerImage                = "ryangravlin/networktest-runner"
 	NetworkTestFinalizer                  = "rgravlin.kubebuilder.io/finalizer"
 	NetworkTestLogErrorGetNetworkTestFail = "unable to fetch NetworkTest"
 	NetworkTestErrorCronJobNotExist       = "CronJob does not exist"
+	NetworkTestRunnerImageName            = "networktest-runner"
 )
 
 // NetworkTestReconciler reconciles a NetworkTest object
@@ -91,7 +92,7 @@ func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
-			if err := r.deleteExternalResources(networkTest); err != nil {
+			if err := r.deleteExternalResources(*networkTest); err != nil {
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried.
 				return ctrl.Result{}, err
@@ -274,9 +275,9 @@ func (r *NetworkTestReconciler) deleteCronJobForNetworkTest(networkTest rgravlin
 	return nil
 }
 
-func (r *NetworkTestReconciler) deleteExternalResources(networkTest *rgravlinv1.NetworkTest) error {
+func (r *NetworkTestReconciler) deleteExternalResources(networkTest rgravlinv1.NetworkTest) error {
 	// delete any external resources associated with the networkTest
-	if err := r.deleteCronJobForNetworkTest(*networkTest); err != nil {
+	if err := r.deleteCronJobForNetworkTest(networkTest); err != nil {
 		return err
 	}
 
@@ -284,16 +285,19 @@ func (r *NetworkTestReconciler) deleteExternalResources(networkTest *rgravlinv1.
 }
 
 const (
-	NetworkTestDefaultSchedule               = "*/5 * * * *"
+	NetworkTestDefaultActiveDeadlineSeconds  = 60
 	NetworkTestDefaultJobHistoryLimit        = int32(3)
-	NetworkTestDefaultFailedHistoryLimit     = int32(1)
+	NetworkTestDefaultFailedHistoryLimit     = int32(3)
 	NetworkTestDefaultSuspended              = false
 	NetworkTestDefaultTerminationGracePeriod = int64(30)
 	NetworkTestDefaultScheduler              = "default-scheduler"
 	NetworkTestDefaultTerminationLog         = "/dev/termination-log"
 	NetworkTestDefaultContainerName          = NetworkTestName
-	NetworkTestDefaultImageName              = NetworkTestRunnerImage
+	NetworkTestDefaultRegistry               = "docker.io"
+	NetworkTestDefaultRepo                   = "ryangravlin"
 )
+
+var NetworkTestDefaultRunnerImage = fmt.Sprintf("%s/%s/%s", NetworkTestDefaultRegistry, NetworkTestDefaultRepo, NetworkTestRunnerImageName)
 
 func getCommandForNetworkTest(test rgravlinv1.NetworkTest) string {
 	switch test.Spec.Type {
@@ -308,21 +312,23 @@ func getCommandForNetworkTest(test rgravlinv1.NetworkTest) string {
 
 func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob {
 	var (
+		//activeDeadlineSeconds    = NetworkTestDefaultActiveDeadlineSeconds
 		containerName            = NetworkTestDefaultContainerName
 		concurrencyPolicy        = batchv1.ForbidConcurrent
 		defaultScheduler         = NetworkTestDefaultScheduler
 		dnsPolicy                = v2.DNSClusterFirst
 		failedHistoryLimit       = NetworkTestDefaultFailedHistoryLimit
-		imageName                = NetworkTestDefaultImageName
 		imagePullPolicy          = v2.PullIfNotPresent
 		jobHistoryLimit          = NetworkTestDefaultJobHistoryLimit
 		restartPolicy            = v2.RestartPolicyOnFailure
-		schedule                 = NetworkTestDefaultSchedule
+		runnerImage              = NetworkTestDefaultRunnerImage
+		schedule                 = rgravlinv1.NetworkTestDefaultSchedule
 		securityContext          = v2.PodSecurityContext{}
 		suspend                  = NetworkTestDefaultSuspended
 		terminationGracePeriod   = NetworkTestDefaultTerminationGracePeriod
 		terminationLog           = NetworkTestDefaultTerminationLog
 		terminationMessagePolicy = v2.TerminationMessageReadFile
+		timeout                  = rgravlinv1.NetworkTestDefaultTimeout
 	)
 
 	labels := map[string]string{
@@ -334,12 +340,30 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		labels[l] = v
 	}
 
+	for l, v := range test.Spec.Labels {
+		labels[l] = v
+	}
+
+	if test.Spec.Registry != "" || test.Spec.Repo != "" {
+		runnerImage = getRunnerImage(test.Spec.Registry, test.Spec.Repo)
+	}
+
 	if test.Spec.Schedule != "" {
 		schedule = test.Spec.Schedule
 	}
 
+	if test.Spec.Suspend {
+		suspend = true
+	}
+
+	if test.Spec.Timeout != rgravlinv1.NetworkTestDefaultTimeout && test.Spec.Timeout != 0 {
+		timeout = test.Spec.Timeout
+	}
+
 	bin := getCommandForNetworkTest(test)
+	timeOutFlag := "--connect-timeout"
 	host := fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host)
+	cmd := []string{bin, timeOutFlag, fmt.Sprintf("%d", timeout), host}
 
 	return &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -359,6 +383,9 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 				},
 				Spec: batchv1.JobSpec{
 					Template: v2.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: labels,
+						},
 						Spec: v2.PodSpec{
 							DNSPolicy:                     dnsPolicy,
 							RestartPolicy:                 restartPolicy,
@@ -368,9 +395,9 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 							Containers: []v2.Container{
 								{
 									Name:                     containerName,
-									Image:                    imageName,
+									Image:                    runnerImage,
 									ImagePullPolicy:          imagePullPolicy,
-									Command:                  []string{bin, host},
+									Command:                  cmd,
 									TerminationMessagePath:   terminationLog,
 									TerminationMessagePolicy: terminationMessagePolicy,
 								},
@@ -381,6 +408,22 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 			},
 		},
 	}
+}
+
+func getRunnerImage(registry string, repo string) string {
+	if registry != "" && repo != "" {
+		return registry + "/" + repo + "/" + NetworkTestRunnerImageName
+	}
+
+	if repo != "" {
+		return NetworkTestDefaultRegistry + "/" + repo + "/" + NetworkTestRunnerImageName
+	}
+
+	if registry != "" {
+		return registry + "/" + NetworkTestDefaultRepo + "/" + NetworkTestRunnerImageName
+	}
+
+	return NetworkTestDefaultRegistry + "/" + NetworkTestDefaultRepo + "/" + NetworkTestRunnerImageName
 }
 
 func getCommandData(testType rgravlinv1.NetworkTestType) (string, string) {
