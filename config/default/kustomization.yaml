@@ -27,6 +27,8 @@ resources:
 #- ../prometheus
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
+# [SAMPLE] Create a sample resource
+- ../samples
 
 # Uncomment the patches line if you enable Metrics, and/or are using webhooks and cert-manager
 patches:

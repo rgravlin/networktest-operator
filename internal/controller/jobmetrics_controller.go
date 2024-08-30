@@ -20,6 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	rgravlinv1 "github.com/rgravlin/networktest-operator/api/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -27,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"net/http"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,8 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"strings"
-	"time"
 )
 
 const (
@@ -90,7 +91,6 @@ func (r *JobMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("%s: %v", "could not update job metric", err)
 	}
 
-	// TODO: fix this
 	// update NetworkTest status
 	if err := r.updateNetworkStatus(context.TODO(), latestJob); err != nil {
 		return ctrl.Result{}, fmt.Errorf("%s: %v", "could not update networktest status", err)
@@ -119,10 +119,9 @@ func (r *JobMetricReconciler) updateJobMetric(job batchv1.Job) error {
 
 	// ensure the gauge is registered for the job
 	err := metrics.Registry.Register(gauge)
-	if exists, ok := err.(prometheus.AlreadyRegisteredError); ok {
+	var exists *prometheus.AlreadyRegisteredError
+	if errors.As(err, &exists) {
 		gauge = exists.ExistingCollector.(prometheus.Gauge)
-	} else {
-		return err
 	}
 
 	if job.Status.Failed == 1 {
@@ -184,7 +183,10 @@ func (r *JobMetricReconciler) getLatestJobFromJob(ctx context.Context, job batch
 		label = labels.SelectorFromSet(map[string]string{
 			LabelSetNetworkTestName: job.Labels[LabelSetNetworkTestName],
 		})
+	} else {
+		return latestJob, errors.New("job must have networkTestName label")
 	}
+
 	listOpts := client.ListOptions{
 		LabelSelector: label,
 	}
