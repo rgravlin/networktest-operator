@@ -1,3 +1,4 @@
+# base image
 FROM alpine/curl
 
 # install dig

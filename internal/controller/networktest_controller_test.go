@@ -38,7 +38,7 @@ var _ = Describe("NetworkTest Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		networktest := &rgravlinv1.NetworkTest{}
 
@@ -51,7 +51,10 @@ var _ = Describe("NetworkTest Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: rgravlinv1.NetworkTestSpec{
+						Host: "127.0.0.1",
+						Type: rgravlinv1.NetworkTestTypeHTTP,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
