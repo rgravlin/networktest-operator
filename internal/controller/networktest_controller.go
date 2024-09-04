@@ -187,7 +187,7 @@ func (r *NetworkTestReconciler) updateNetworkTestStatusOk(networkTest *rgravlinv
 	}
 
 	// update the sync string
-	if msg != "" {
+	if len(msg) != 0 {
 		if networkTest.Status.CronSync != msg {
 			networkTest.Status.CronSync = msg
 			needsUpdate = true
@@ -324,7 +324,6 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		imagePullPolicy          = v2.PullIfNotPresent
 		jobHistoryLimit          = NetworkTestDefaultJobHistoryLimit
 		restartPolicy            = v2.RestartPolicyOnFailure
-		runnerImage              = NetworkTestDefaultRunnerImage
 		schedule                 = rgravlinv1.NetworkTestDefaultSchedule
 		securityContext          = v2.PodSecurityContext{}
 		suspend                  = NetworkTestDefaultSuspended
@@ -347,11 +346,7 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		labels[l] = v
 	}
 
-	if test.Spec.Registry != "" || test.Spec.Repo != "" {
-		runnerImage = getRunnerImage(test.Spec.Registry, test.Spec.Repo)
-	}
-
-	if test.Spec.Schedule != "" {
+	if len(test.Spec.Schedule) != 0 {
 		schedule = test.Spec.Schedule
 	}
 
@@ -363,6 +358,8 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		timeout = test.Spec.Timeout
 	}
 
+	runnerImage := getRunnerImage(test.Spec.Registry, test.Spec.Repo)
+	// TODO: this should return the string slice of the entire command for any test
 	bin := getCommandForNetworkTest(test)
 	timeOutFlag := "--connect-timeout"
 	host := fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host)
@@ -414,19 +411,18 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 }
 
 func getRunnerImage(registry string, repo string) string {
-	if registry != "" && repo != "" {
-		return registry + "/" + repo + "/" + NetworkTestRunnerImageName
+	finalRegistry := NetworkTestDefaultRegistry
+	finalRepo := NetworkTestDefaultRepo
+
+	if len(registry) != 0 {
+		finalRegistry = registry
 	}
 
-	if repo != "" {
-		return NetworkTestDefaultRegistry + "/" + repo + "/" + NetworkTestRunnerImageName
+	if len(repo) != 0 {
+		finalRepo = repo
 	}
 
-	if registry != "" {
-		return registry + "/" + NetworkTestDefaultRepo + "/" + NetworkTestRunnerImageName
-	}
-
-	return NetworkTestDefaultRegistry + "/" + NetworkTestDefaultRepo + "/" + NetworkTestRunnerImageName
+	return fmt.Sprintf("%s/%s/%s", finalRegistry, finalRepo, NetworkTestRunnerImageName)
 }
 
 func getCommandData(testType rgravlinv1.NetworkTestType) (string, string) {
