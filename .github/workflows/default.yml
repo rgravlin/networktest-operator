@@ -6,7 +6,7 @@ on:
 
 jobs:
   lint-go:
-    runs-on: linux-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
         run: make lint
 
   build-runner:
-    runs-on: linux-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
 
   build-operator:
     needs: [lint-go]
-    runs-on: linux-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
