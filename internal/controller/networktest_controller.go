@@ -312,7 +312,10 @@ func getCommandForNetworkTest(test rgravlinv1.NetworkTest) string {
 
 func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob {
 	var (
-		//activeDeadlineSeconds    = NetworkTestDefaultActiveDeadlineSeconds
+		// TODO: without a reasonable deadline a Pod without an image can prevent the job from completing
+		//       with a ForbidConcurrent policy this is basically a blocking lock on future jobs
+		//       Maybe implement a timeout + (N * time.Second) deadline to ensure cleanup
+		// activeDeadlineSeconds    = NetworkTestDefaultActiveDeadlineSeconds
 		containerName            = NetworkTestDefaultContainerName
 		concurrencyPolicy        = batchv1.ForbidConcurrent
 		defaultScheduler         = NetworkTestDefaultScheduler
