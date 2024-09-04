@@ -324,7 +324,6 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		imagePullPolicy          = v2.PullIfNotPresent
 		jobHistoryLimit          = NetworkTestDefaultJobHistoryLimit
 		restartPolicy            = v2.RestartPolicyOnFailure
-		runnerImage              = NetworkTestDefaultRunnerImage
 		schedule                 = rgravlinv1.NetworkTestDefaultSchedule
 		securityContext          = v2.PodSecurityContext{}
 		suspend                  = NetworkTestDefaultSuspended
@@ -359,7 +358,7 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		timeout = test.Spec.Timeout
 	}
 
-	runnerImage = getRunnerImage(test.Spec.Registry, test.Spec.Repo)
+	runnerImage := getRunnerImage(test.Spec.Registry, test.Spec.Repo)
 	// TODO: this should return the string slice of the entire command for any test
 	bin := getCommandForNetworkTest(test)
 	timeOutFlag := "--connect-timeout"
