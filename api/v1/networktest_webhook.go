@@ -61,7 +61,7 @@ const (
 func (r *NetworkTest) Default() {
 	networktestlog.Info("default", "name", r.Name)
 
-	if r.Spec.Schedule == "" {
+	if len(r.Spec.Schedule) == 0 {
 		r.Spec.Schedule = NetworkTestDefaultSchedule
 	}
 
@@ -203,7 +203,7 @@ func isValidIP(ip string) bool {
 }
 
 func isValidHostname(hostname string) error {
-	if hostname == "" {
+	if len(hostname) == 0 {
 		return fmt.Errorf("hostname cannot be empty")
 	} else if len(hostname) > validHostNameMaxLength {
 		return fmt.Errorf("name exceeded the maximum length of %d characters", validHostNameMaxLength)
