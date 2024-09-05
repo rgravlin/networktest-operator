@@ -20,3 +20,14 @@ metadata:
 spec:
   type: "http"
   host: "loosebits.io"
+---
+apiVersion: rgravlin.github.com/v1
+kind: NetworkTest
+metadata:
+  labels:
+    app.kubernetes.io/name: networktest-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: networktest-dns-sample
+spec:
+  type: "dns"
+  host: "loosebits.io"

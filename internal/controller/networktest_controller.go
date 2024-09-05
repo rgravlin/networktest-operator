@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-test/deep"
 	"github.com/pkg/errors"
@@ -41,6 +42,8 @@ const (
 	NetworkTestLogErrorGetNetworkTestFail = "unable to fetch NetworkTest"
 	NetworkTestErrorCronJobNotExist       = "CronJob does not exist"
 	NetworkTestRunnerImageName            = "networktest-runner"
+	NetworkTestDefaultHTTPTimeoutParam    = "--connect-timeout"
+	NetworkTestDefaultDNSTimeoutParam     = "+timeout="
 )
 
 // NetworkTestReconciler reconciles a NetworkTest object
@@ -299,15 +302,39 @@ const (
 
 var NetworkTestDefaultRunnerImage = fmt.Sprintf("%s/%s/%s", NetworkTestDefaultRegistry, NetworkTestDefaultRepo, NetworkTestRunnerImageName)
 
-func getCommandForNetworkTest(test rgravlinv1.NetworkTest) string {
+func getCommandForNetworkTest(test rgravlinv1.NetworkTest, timeout string) []string {
 	switch test.Spec.Type {
+	case rgravlinv1.NetworkTestTypeDNS:
+		return buildDNSCommand(test, timeout)
 	case rgravlinv1.NetworkTestTypeHTTP:
 	case rgravlinv1.NetworkTestTypeHTTPS:
-		return rgravlinv1.NetworkTestCommandHTTP
-	case rgravlinv1.NetworkTestTypeDNS:
-		return rgravlinv1.NetworkTestCommandDNS
+	default:
+		return buildCurlCommand(test, timeout)
 	}
-	return rgravlinv1.NetworkTestCommandHTTP
+	return buildCurlCommand(test, timeout)
+}
+
+func buildDNSCommand(test rgravlinv1.NetworkTest, timeout string) []string {
+	return []string{rgravlinv1.NetworkTestCommandDNS,
+		getDNSTimeout(timeout),
+		test.Spec.Host,
+	}
+}
+
+func getDNSTimeout(timeout string) string {
+	return NetworkTestDefaultDNSTimeoutParam + timeout
+}
+
+func buildCurlCommand(test rgravlinv1.NetworkTest, timeout string) []string {
+	return []string{rgravlinv1.NetworkTestCommandHTTP,
+		NetworkTestDefaultHTTPTimeoutParam,
+		timeout,
+		fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host),
+	}
+}
+
+func getTimeout(timeout int) string {
+	return strconv.Itoa(timeout)
 }
 
 func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob {
@@ -324,6 +351,7 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		imagePullPolicy          = v2.PullIfNotPresent
 		jobHistoryLimit          = NetworkTestDefaultJobHistoryLimit
 		restartPolicy            = v2.RestartPolicyOnFailure
+		runnerImage              = NetworkTestDefaultRunnerImage
 		schedule                 = rgravlinv1.NetworkTestDefaultSchedule
 		securityContext          = v2.PodSecurityContext{}
 		suspend                  = NetworkTestDefaultSuspended
@@ -358,12 +386,11 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		timeout = test.Spec.Timeout
 	}
 
-	runnerImage := getRunnerImage(test.Spec.Registry, test.Spec.Repo)
-	// TODO: this should return the string slice of the entire command for any test
-	bin := getCommandForNetworkTest(test)
-	timeOutFlag := "--connect-timeout"
-	host := fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host)
-	cmd := []string{bin, timeOutFlag, fmt.Sprintf("%d", timeout), host}
+	if len(test.Spec.Registry) != 0 || len(test.Spec.Repo) != 0 {
+		runnerImage = getRunnerImage(test.Spec.Registry, test.Spec.Repo)
+	}
+
+	cmd := getCommandForNetworkTest(test, getTimeout(timeout))
 
 	return &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
