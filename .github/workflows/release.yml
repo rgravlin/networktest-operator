@@ -38,12 +38,12 @@ jobs:
         with:
           fetch-depth: "0"
 
-      #- name: version-tag
-      #  id: tag
-      #  uses: anothrNick/github-tag-action@1.70.0
-      #  env:
-      #    WITH_V: true
-      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: version-tag
+        id: tag
+        uses: anothrNick/github-tag-action@1.70.0
+        env:
+          WITH_V: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
