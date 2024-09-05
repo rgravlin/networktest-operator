@@ -21,6 +21,7 @@ jobs:
           args: --timeout=5m
 
   build-runner:
+    needs: [lint-go]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -51,8 +52,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: false
-          tags:
-            - ryangravlin/networktest-runner:branch
+          tags: ryangravlin/networktest-runner:branch
 
   build-operator:
     needs: [lint-go]
@@ -100,5 +100,4 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: false
-          tags:
-            - ryangravlin/networktest-operator:branch
+          tags: ryangravlin/networktest-operator:branch
