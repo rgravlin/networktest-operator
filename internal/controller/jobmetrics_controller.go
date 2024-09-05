@@ -56,8 +56,6 @@ type JobMetricReconciler struct {
 
 // +kubebuilder:rbac:groups=rgravlin.github.com,resources=networktests,verbs=get;list
 // +kubebuilder:rbac:groups=rgravlin.github.com,resources=networktests/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=rgravlin.github.com.kubebuilder.io,resources=networktests,verbs=get;list
-// +kubebuilder:rbac:groups=rgravlin.github.com.kubebuilder.io,resources=networktests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs/status,verbs=get
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch
@@ -73,7 +71,6 @@ func (r *JobMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	job := &batchv1.Job{}
 	if err := r.Get(ctx, req.NamespacedName, job); err != nil {
-		logger.Error(err, JobErrorGetJobNotExist)
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
