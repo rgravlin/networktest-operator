@@ -54,14 +54,14 @@ jobs:
       - name: Build and push controller
         uses: docker/build-push-action@v6
         with:
-          push: false
+          push: true
           tags: ryangravlin/networktest-operator:${{ steps.tag.outputs.new_tag }}
 
       - name: Build and push runner
         uses: docker/build-push-action@v6
         with:
           context: "docker/"
-          push: false
+          push: true
           tags: ryangravlin/networktest-runner:${{ steps.tag.outputs.new_tag }}
 
       - name: Release
