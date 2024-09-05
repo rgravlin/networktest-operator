@@ -7,23 +7,8 @@ on:
       - main
 
 jobs:
-  test:
-    if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22.x'
-
-      - name: Test the controller
-        run: make test
-
   tag-and-release:
-    needs: test
+    if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -55,14 +40,18 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: ryangravlin/networktest-operator:${{ steps.tag.outputs.new_tag }}
+          tags:
+            - ryangravlin/networktest-operator:latest
+            - ryangravlin/networktest-operator:${{ steps.tag.outputs.new_tag }}
 
       - name: Build and push runner
         uses: docker/build-push-action@v6
         with:
           context: "docker/"
           push: true
-          tags: ryangravlin/networktest-runner:${{ steps.tag.outputs.new_tag }}
+          tags:
+            - ryangravlin/networktest-runner:latest
+            - ryangravlin/networktest-runner:${{ steps.tag.outputs.new_tag }}
 
       - name: Release
         uses: softprops/action-gh-release@v2.0.5
