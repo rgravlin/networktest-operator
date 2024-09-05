@@ -21,6 +21,7 @@ jobs:
           args: --timeout=5m
 
   build-runner:
+    needs: [lint-go]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -37,6 +38,21 @@ jobs:
       - name: Setup Go
         if: steps.docker-changes.outputs.src == 'true'
         run: docker build docker/ -t ryangravlin/networkoperator-runner:latest
+
+      - name: Set up QEMU
+        if: steps.docker-changes.outputs.src == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.docker-changes.outputs.src == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        if: steps.docker-changes.outputs.src == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          tags: ryangravlin/networktest-runner:branch
 
   build-operator:
     needs: [lint-go]
@@ -55,6 +71,7 @@ jobs:
               - 'internal/**'
               - 'go.mod'
               - 'go.sum'
+              - 'Dockerfile'
 
       - name: Setup Go
         if: steps.go-changes.outputs.src == 'true'
@@ -69,3 +86,18 @@ jobs:
       - name: Build
         if: steps.go-changes.outputs.src == 'true'
         run: make
+
+      - name: Set up QEMU
+        if: steps.go-changes.outputs.src == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.go-changes.outputs.src == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        if: steps.go-changes.outputs.src == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          tags: ryangravlin/networktest-operator:branch

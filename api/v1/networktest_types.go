@@ -74,6 +74,10 @@ type NetworkTest struct {
 	Status NetworkTestStatus `json:"status,omitempty"`
 }
 
+func (r *NetworkTest) IsBeingDeleted() bool {
+	return !r.ObjectMeta.DeletionTimestamp.IsZero()
+}
+
 // +kubebuilder:object:root=true
 
 // NetworkTestList contains a list of NetworkTest

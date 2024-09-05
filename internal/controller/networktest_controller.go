@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-test/deep"
 	"github.com/pkg/errors"
@@ -56,9 +57,6 @@ type NetworkTestReconciler struct {
 // +kubebuilder:rbac:groups=rgravlin.github.com,resources=networktests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rgravlin.github.com,resources=networktests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rgravlin.github.com,resources=networktests/finalizers,verbs=update
-// +kubebuilder:rbac:groups=rgravlin.github.com.kubebuilder.io,resources=networktests,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rgravlin.github.com.kubebuilder.io,resources=networktests/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=rgravlin.github.com.kubebuilder.io,resources=networktests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs/status,verbs=get
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
@@ -72,7 +70,6 @@ func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	networkTest := &rgravlinv1.NetworkTest{}
 	if err := r.Get(ctx, req.NamespacedName, networkTest); err != nil {
-		logger.Error(err, NetworkTestLogErrorGetNetworkTestFail)
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
@@ -81,40 +78,18 @@ func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// process finalizers
 	// examine DeletionTimestamp to determine if object is under deletion
-	if networkTest.ObjectMeta.DeletionTimestamp.IsZero() {
-		// The object is not being deleted, so if it does not have our finalizer,
-		// then lets add the finalizer and update the object. This is equivalent
-		// to registering our finalizer.
-		if !controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
-			controllerutil.AddFinalizer(networkTest, NetworkTestFinalizer)
-			if err := r.Update(ctx, networkTest); err != nil {
-				return ctrl.Result{}, err
-			}
+	if !networkTest.IsBeingDeleted() {
+		if err := r.registerFinalizer(networkTest, context.TODO()); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 	} else {
-		// The object is being deleted
-		if controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
-			// our finalizer is present, so lets handle any external dependency
-			if err := r.deleteExternalResources(*networkTest); err != nil {
-				// if fail to delete the external dependency here, return with error
-				// so that it can be retried.
-				return ctrl.Result{}, err
-			}
-
-			// remove our finalizer from the list and update it.
-			controllerutil.RemoveFinalizer(networkTest, NetworkTestFinalizer)
-			if err := r.Update(ctx, networkTest); err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := r.handleFinalizer(networkTest, context.TODO()); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
-
-	cmd, uriBase := getCommandData(networkTest.Spec.Type)
-	logger.V(2).Info("command type " + cmd)
-	logger.V(2).Info("uri base " + uriBase)
 
 	// create CronJob spec from NetworkTest object
 	cronJobSpec := newCronJobSpecForNetworkTest(*networkTest)
@@ -169,7 +144,6 @@ func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	logger.V(2).Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
 
@@ -179,6 +153,37 @@ func (r *NetworkTestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&rgravlinv1.NetworkTest{}).
 		Owns(&batchv1.CronJob{}).
 		Complete(r)
+}
+
+func (r *NetworkTestReconciler) registerFinalizer(networkTest *rgravlinv1.NetworkTest, ctx context.Context) error {
+	// The object is not being deleted, so if it does not have our finalizer,
+	// then lets add the finalizer and update the object. This is equivalent
+	// to registering our finalizer.
+	if !controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
+		controllerutil.AddFinalizer(networkTest, NetworkTestFinalizer)
+		if err := r.Update(ctx, networkTest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *NetworkTestReconciler) handleFinalizer(networkTest *rgravlinv1.NetworkTest, ctx context.Context) error {
+	if controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
+		// our finalizer is present, so lets handle any external dependency
+		if err := r.deleteExternalResources(*networkTest); err != nil {
+			// if fail to delete the external dependency here, return with error
+			// so that it can be retried.
+			return err
+		}
+
+		// remove our finalizer from the list and update it.
+		controllerutil.RemoveFinalizer(networkTest, NetworkTestFinalizer)
+		if err := r.Update(ctx, networkTest); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *NetworkTestReconciler) updateNetworkTestStatusOk(networkTest *rgravlinv1.NetworkTest, cronJob batchv1.CronJob, msg string) error {
@@ -280,11 +285,7 @@ func (r *NetworkTestReconciler) deleteCronJobForNetworkTest(networkTest rgravlin
 
 func (r *NetworkTestReconciler) deleteExternalResources(networkTest rgravlinv1.NetworkTest) error {
 	// delete any external resources associated with the networkTest
-	if err := r.deleteCronJobForNetworkTest(networkTest); err != nil {
-		return err
-	}
-
-	return nil
+	return r.deleteCronJobForNetworkTest(networkTest)
 }
 
 const (
@@ -301,41 +302,6 @@ const (
 )
 
 var NetworkTestDefaultRunnerImage = fmt.Sprintf("%s/%s/%s", NetworkTestDefaultRegistry, NetworkTestDefaultRepo, NetworkTestRunnerImageName)
-
-func getCommandForNetworkTest(test rgravlinv1.NetworkTest, timeout string) []string {
-	switch test.Spec.Type {
-	case rgravlinv1.NetworkTestTypeDNS:
-		return buildDNSCommand(test, timeout)
-	case rgravlinv1.NetworkTestTypeHTTP:
-	case rgravlinv1.NetworkTestTypeHTTPS:
-	default:
-		return buildCurlCommand(test, timeout)
-	}
-	return buildCurlCommand(test, timeout)
-}
-
-func buildDNSCommand(test rgravlinv1.NetworkTest, timeout string) []string {
-	return []string{rgravlinv1.NetworkTestCommandDNS,
-		getDNSTimeout(timeout),
-		test.Spec.Host,
-	}
-}
-
-func getDNSTimeout(timeout string) string {
-	return NetworkTestDefaultDNSTimeoutParam + timeout
-}
-
-func buildCurlCommand(test rgravlinv1.NetworkTest, timeout string) []string {
-	return []string{rgravlinv1.NetworkTestCommandHTTP,
-		NetworkTestDefaultHTTPTimeoutParam,
-		timeout,
-		fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host),
-	}
-}
-
-func getTimeout(timeout int) string {
-	return strconv.Itoa(timeout)
-}
 
 func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob {
 	var (
@@ -437,6 +403,41 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 	}
 }
 
+func buildDNSCommand(test rgravlinv1.NetworkTest, timeout string) []string {
+	return []string{rgravlinv1.NetworkTestCommandDNS,
+		getDNSTimeout(timeout),
+		test.Spec.Host,
+	}
+}
+
+func buildCurlCommand(test rgravlinv1.NetworkTest, timeout string) []string {
+	return []string{rgravlinv1.NetworkTestCommandHTTP,
+		NetworkTestDefaultHTTPTimeoutParam,
+		timeout,
+		fmt.Sprintf("%s://%s", test.Spec.Type, test.Spec.Host),
+	}
+}
+
+func getCommandForNetworkTest(test rgravlinv1.NetworkTest, timeout string) []string {
+	switch test.Spec.Type {
+	case rgravlinv1.NetworkTestTypeDNS:
+		return buildDNSCommand(test, timeout)
+	case rgravlinv1.NetworkTestTypeHTTP:
+	case rgravlinv1.NetworkTestTypeHTTPS:
+	default:
+		return buildCurlCommand(test, timeout)
+	}
+	return buildCurlCommand(test, timeout)
+}
+
+func getDNSTimeout(timeout string) string {
+	return NetworkTestDefaultDNSTimeoutParam + timeout
+}
+
+func getTimeout(timeout int) string {
+	return strconv.Itoa(timeout)
+}
+
 func getRunnerImage(registry string, repo string) string {
 	finalRegistry := NetworkTestDefaultRegistry
 	finalRepo := NetworkTestDefaultRepo
@@ -450,21 +451,6 @@ func getRunnerImage(registry string, repo string) string {
 	}
 
 	return fmt.Sprintf("%s/%s/%s", finalRegistry, finalRepo, NetworkTestRunnerImageName)
-}
-
-func getCommandData(testType rgravlinv1.NetworkTestType) (string, string) {
-	var cmd, uriBase string
-	switch testType {
-	case rgravlinv1.NetworkTestTypeHTTP:
-		cmd = rgravlinv1.NetworkTestCommandHTTP
-		uriBase = rgravlinv1.NetworkTestPrefixHTTP
-	case rgravlinv1.NetworkTestTypeHTTPS:
-		cmd = rgravlinv1.NetworkTestCommandHTTP
-		uriBase = rgravlinv1.NetworkTestPrefixHTTPS
-	case rgravlinv1.NetworkTestTypeDNS:
-		cmd = rgravlinv1.NetworkTestCommandDNS
-	}
-	return cmd, uriBase
 }
 
 func getCronJobNameForNetworkTest(name string) string {
