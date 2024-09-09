@@ -82,10 +82,7 @@ func (r *NetworkTest) HasFinalizer(finalizerName string) bool {
 }
 
 func (r *NetworkTest) IsCreated() bool {
-	if len(r.Status.CronJobName) == 0 {
-		return true
-	}
-	return false
+	return len(r.Status.CronJobName) == 0
 }
 
 // +kubebuilder:object:root=true
