@@ -72,59 +72,52 @@ type NetworkTestReconciler struct {
 func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	networkTest := &rgravlinv1.NetworkTest{}
-	if err := r.Get(ctx, req.NamespacedName, networkTest); err != nil {
+	instance := &rgravlinv1.NetworkTest{}
+	cronJobSpec := &batchv1.CronJob{}
+	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// process finalizers
-	// examine DeletionTimestamp to determine if object is under deletion
-	if !networkTest.IsBeingDeleted() {
-		if err := r.registerFinalizer(networkTest, context.TODO()); err != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
-		}
-	} else {
-		if err := r.handleFinalizer(networkTest, context.TODO()); err != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	// handle delete
+	if instance.IsBeingDeleted() {
+		if err := r.handleFinalizer(instance, ctx); err != nil {
+			return ctrl.Result{RequeueAfter: DefaultRequeueTime}, err
 		}
 
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
 
-	// create CronJob spec from NetworkTest object
-	cronJobSpec := newCronJobSpecForNetworkTest(*networkTest)
+	// handle no finalizer
+	if !instance.HasFinalizer(NetworkTestFinalizer) {
+		if err := r.registerFinalizer(instance, context.TODO()); err != nil {
+			return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
+		}
+	}
+
+	// CronJob spec creation
+	cronJobSpec = newCronJobSpecForNetworkTest(*instance)
 
 	// stamp controller reference
-	if err := ctrl.SetControllerReference(networkTest, cronJobSpec, r.Scheme); err != nil {
-		if err := r.updateNetworkTestStatusError(networkTest, *cronJobSpec, err); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+	if err := r.stampControllerRef(instance, cronJobSpec); err != nil {
+		return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
 	}
 
 	// retrieve CronJob from system should it exist
-	foundCronJob, err := r.getCronJobForNetworkTest(*networkTest)
+	foundCronJob, err := r.getCronJobForNetworkTest(*instance)
 	if err != nil {
 		if err.Error() == NetworkTestErrorCronJobNotExist {
 			// the CronJob does not exist so we should create it
 			_, err := r.createCronJobFromSpec(cronJobSpec)
 			// there is an error creating the CronJob and we should requeue
 			if err != nil {
-				if err := r.updateNetworkTestStatusError(networkTest, *cronJobSpec, err); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, err
+				return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
 			}
 		} else {
-			// there was an error retrieving the CronJob
-			if err := r.updateNetworkTestStatusError(networkTest, *cronJobSpec, err); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
+			return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
 		}
 	}
 
@@ -134,18 +127,16 @@ func (r *NetworkTestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.V(1).Info("CronJob spec has drifted from controller specification, reconciling", "diff", diff)
 			err := r.Client.Update(context.Background(), cronJobSpec)
 			if err != nil {
-				if err := r.updateNetworkTestStatusError(networkTest, *cronJobSpec, err); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, err
+				return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
 			}
 			logger.V(1).Info("Successfully updated CronJob", "CronJob", cronJobSpec.ObjectMeta.Name)
 		}
 	}
 
+	// TODO: get before update
 	// update CR status
-	if err := r.updateNetworkTestStatusOk(networkTest, *cronJobSpec, "CronJob successfully synced"); err != nil {
-		return ctrl.Result{}, err
+	if err := r.updateNetworkTestStatusOk(instance, *cronJobSpec, "CronJob successfully synced"); err != nil {
+		return r.updateNetworkTestStatusError(instance, *cronJobSpec, DefaultRequeueTime, err)
 	}
 
 	return ctrl.Result{}, nil
@@ -172,6 +163,38 @@ func (r *NetworkTestReconciler) registerFinalizer(networkTest *rgravlinv1.Networ
 	return nil
 }
 
+func (r *NetworkTestReconciler) updateNetworkTestStatusError(instance *rgravlinv1.NetworkTest, cronJob batchv1.CronJob, requeueTime time.Duration, syncErr error) (reconcile.Result, error) {
+	result := ctrl.Result{}
+	if requeueTime != 0 {
+		result = ctrl.Result{RequeueAfter: requeueTime}
+	}
+
+	needsUpdate := false
+	// update CR status
+	if instance.Status.CronJobName != cronJob.ObjectMeta.Name {
+		instance.Status.CronJobName = cronJob.ObjectMeta.Name
+		needsUpdate = true
+	}
+
+	// update the sync error
+	if syncErr != nil {
+		syncError := fmt.Sprintf("reconcile has failed with error: %v", syncErr)
+		if instance.Status.CronSync != syncError {
+			instance.Status.CronSync = syncError
+			needsUpdate = true
+		}
+	}
+
+	if needsUpdate {
+		err := r.Status().Update(context.Background(), instance)
+		if err != nil {
+			return result, err
+		}
+	}
+
+	return result, nil
+}
+
 func (r *NetworkTestReconciler) handleFinalizer(networkTest *rgravlinv1.NetworkTest, ctx context.Context) error {
 	if controllerutil.ContainsFinalizer(networkTest, NetworkTestFinalizer) {
 		// our finalizer is present, so lets handle any external dependency
@@ -190,6 +213,13 @@ func (r *NetworkTestReconciler) handleFinalizer(networkTest *rgravlinv1.NetworkT
 	return nil
 }
 
+func (r *NetworkTestReconciler) stampControllerRef(networkTest *rgravlinv1.NetworkTest, cronJobSpec *batchv1.CronJob) error {
+	if err := ctrl.SetControllerReference(networkTest, cronJobSpec, r.Scheme); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *NetworkTestReconciler) updateNetworkTestStatusOk(networkTest *rgravlinv1.NetworkTest, cronJob batchv1.CronJob, msg string) error {
 	needsUpdate := false
 	// update CR status
@@ -202,33 +232,6 @@ func (r *NetworkTestReconciler) updateNetworkTestStatusOk(networkTest *rgravlinv
 	if len(msg) != 0 {
 		if networkTest.Status.CronSync != msg {
 			networkTest.Status.CronSync = msg
-			needsUpdate = true
-		}
-	}
-
-	if needsUpdate {
-		err := r.Status().Update(context.Background(), networkTest)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *NetworkTestReconciler) updateNetworkTestStatusError(networkTest *rgravlinv1.NetworkTest, cronJob batchv1.CronJob, syncErr error) error {
-	needsUpdate := false
-	// update CR status
-	if networkTest.Status.CronJobName != cronJob.ObjectMeta.Name {
-		networkTest.Status.CronJobName = cronJob.ObjectMeta.Name
-		needsUpdate = true
-	}
-
-	// update the sync error
-	if syncErr != nil {
-		syncError := fmt.Sprintf("CronJob get has failed with error: %v", syncErr)
-		if networkTest.Status.CronSync != syncError {
-			networkTest.Status.CronSync = syncError
 			needsUpdate = true
 		}
 	}
@@ -293,7 +296,6 @@ func (r *NetworkTestReconciler) deleteExternalResources(networkTest rgravlinv1.N
 }
 
 const (
-	NetworkTestDefaultActiveDeadlineSeconds  = 60
 	NetworkTestDefaultJobHistoryLimit        = int32(3)
 	NetworkTestDefaultFailedHistoryLimit     = int32(3)
 	NetworkTestDefaultSuspended              = false
@@ -312,7 +314,6 @@ func newCronJobSpecForNetworkTest(test rgravlinv1.NetworkTest) *batchv1.CronJob 
 		// TODO: without a reasonable deadline a Pod without an image can prevent the job from completing
 		//       with a ForbidConcurrent policy this is basically a blocking lock on future jobs
 		//       Maybe implement a timeout + (N * time.Second) deadline to ensure cleanup
-		// activeDeadlineSeconds    = NetworkTestDefaultActiveDeadlineSeconds
 		containerName            = NetworkTestDefaultContainerName
 		concurrencyPolicy        = batchv1.ForbidConcurrent
 		defaultScheduler         = NetworkTestDefaultScheduler
@@ -458,5 +459,5 @@ func getRunnerImage(registry string, repo string) string {
 }
 
 func getCronJobNameForNetworkTest(name string) string {
-	return fmt.Sprintf("%s-%s", "nt-j", name)
+	return fmt.Sprintf("%s-%s", NetworkTestCronJobPrefix, name)
 }

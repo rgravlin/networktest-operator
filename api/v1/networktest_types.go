@@ -77,6 +77,17 @@ func (r *NetworkTest) IsBeingDeleted() bool {
 	return !r.ObjectMeta.DeletionTimestamp.IsZero()
 }
 
+func (r *NetworkTest) HasFinalizer(finalizerName string) bool {
+	return slices.Contains(r.ObjectMeta.Finalizers, finalizerName)
+}
+
+func (r *NetworkTest) IsCreated() bool {
+	if len(r.Status.CronJobName) == 0 {
+		return true
+	}
+	return false
+}
+
 // +kubebuilder:object:root=true
 
 // NetworkTestList contains a list of NetworkTest
