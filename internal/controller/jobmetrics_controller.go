@@ -40,12 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-const (
-	LabelSetController      = "rgravlin.github.com/controller"
-	LabelSetNetworkTestName = "rgravlin.github.com/networkTestName"
-	JobErrorGetJobNotExist  = "CronJob does not exist"
-)
-
 // JobMetricReconciler reconciles a JobMetric object
 type JobMetricReconciler struct {
 	client.Client
