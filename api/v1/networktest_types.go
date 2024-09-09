@@ -18,16 +18,15 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/strings/slices"
 )
 
 const (
 	NetworkTestTypeHTTP    NetworkTestType = "http"
 	NetworkTestTypeHTTPS   NetworkTestType = "https"
 	NetworkTestTypeDNS     NetworkTestType = "dns"
-	NetworkTestPrefixHTTP                  = "http://"
-	NetworkTestPrefixHTTPS                 = "https://"
 	NetworkTestCommandHTTP                 = "/bin/curl-wrapper.sh"
-	NetworkTestCommandDNS                  = "dig"
+	NetworkTestCommandDNS                  = "nslookup"
 )
 
 var (

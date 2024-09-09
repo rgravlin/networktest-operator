@@ -35,16 +35,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	NetworkTestName                       = "networktest"
-	NetworkTestFinalizer                  = "rgravlin.kubebuilder.io/finalizer"
-	NetworkTestLogErrorGetNetworkTestFail = "unable to fetch NetworkTest"
-	NetworkTestErrorCronJobNotExist       = "CronJob does not exist"
-	NetworkTestRunnerImageName            = "networktest-runner"
-	NetworkTestDefaultHTTPTimeoutParam    = "--connect-timeout"
-	NetworkTestDefaultDNSTimeoutParam     = "+timeout="
+	NetworkTestName                    = "networktest-operator"
+	NetworkTestErrorCronJobNotExist    = "CronJob does not exist"
+	NetworkTestCronJobPrefix           = "nt-j"
+	NetworkTestRunnerImageName         = "networktest-runner"
+	NetworkTestDefaultHTTPTimeoutParam = "--connect-timeout"
+	NetworkTestDefaultDNSTimeoutParam  = "-timeout="
+	NetworkTestFinalizer               = "rgravlin.github.com/finalizer"
+	LabelSetController                 = "rgravlin.github.com/controller"
+	LabelSetNetworkTestName            = "rgravlin.github.com/networkTestName"
+	DefaultRequeueTime                 = 30 * time.Second
 )
 
 // NetworkTestReconciler reconciles a NetworkTest object
